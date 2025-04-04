@@ -1,60 +1,11 @@
-/*
 #include <Arduino.h>
-
-#include <ezButton.h>
-
-#define CLK_PIN 19
-#define DATA_PIN 18
-#define SW_PIN 20
-
-ezButton btn(SW_PIN);
-
-int CLK_value = 0;
-int prev_CLK_value = 0;
-
-void setup() {
-  Serial.begin(9600);
-  while (!Serial);
-
-  pinMode(CLK_PIN, INPUT);
-  pinMode(DATA_PIN, INPUT);
-  pinMode(SW_PIN, INPUT);
-
-  btn.setDebounceTime(50);
-
-  prev_CLK_value = digitalRead(CLK_PIN);
-}
-
-void loop() {
-  btn.loop();
-
-  CLK_value = digitalRead(CLK_PIN);
-  
-  if (CLK_value != prev_CLK_value && CLK_value == HIGH) {
-    if (digitalRead(DATA_PIN) == HIGH) {
-      Serial.println("Turned left");
-    } else {
-      Serial.println("Turned right");
-    }
-  }
-
-  prev_CLK_value = CLK_value;
-
-  if (btn.isPressed()) {
-    Serial.println("Button is pressed");
-  }
-}
-
-*/
-
-#include <Arduino.h>
-
-#include <ezButton.h>
-
 #include <Wire.h>
+
 #include <Adafruit_MLX90614.h>
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_GFX.h>
+
+#include <encoder.h>
 
 // Initialize I2C for pins 16 (SDA) and 17 (SCL)
 MbedI2C i2c(p16, p17);
@@ -69,53 +20,50 @@ MbedI2C i2c(p16, p17);
 #define ENCODER_DATA_PIN 15
 #define ENCODER_SW_PIN 13
 
+// Initialize MLX90614 sensor and OLED display
 Adafruit_MLX90614 mlx;
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &i2c, -1);
 
-ezButton encoder_btn(ENCODER_SW_PIN);
-int CLK_value = 0;
-int prev_CLK_value = 0;
+RotaryEncoder encoder(ENCODER_CLK_PIN, ENCODER_DATA_PIN, ENCODER_SW_PIN);
 
 void setup() {
   i2c.begin();
-  // Serial.begin(9600);
-  // while (!Serial);
+  Serial.begin(9600);
+  while (!Serial);
 
   if (!mlx.begin(MLX_ADDRESS, &i2c)) {
-    // Serial.println("Error connecting to MLX sensor. Check wiring.");
+    Serial.println(F("Error connecting to MLX sensor. Check wiring."));
     while (1);
   }
 
   if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-    // Serial.println(F("SSD1306 allocation failed"));
+    Serial.println(F("SSD1306 allocation failed"));
     while (1);
   }
 
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-
-  encoder_btn.setDebounceTime(50);
+  display.println(F("Hello World!"));
+  display.display();
 }
 
+int count = 0;
+
 void loop() {
-  encoder_btn.loop();
+  encoder.loop();
 
-  CLK_value = digitalRead(ENCODER_CLK_PIN);
-  
-  if (CLK_value != prev_CLK_value && CLK_value == HIGH) {
-    if (digitalRead(ENCODER_DATA_PIN) == HIGH) {
-      Serial.println("Turned left");
-    } else {
-      Serial.println("Turned right");
-    }
+  if (encoder.isPressed()) {
+    Serial.println("Button is pressed!");
+    Serial.println(count++);
+
   }
 
-  prev_CLK_value = CLK_value;
-
-  if (encoder_btn.isPressed()) {
-    Serial.println("Button is pressed");
+  auto direction = encoder.getDirection();
+  if (direction == COUNTERCLOCKWISE) {
+    Serial.println("Turned left!");
+  } else if (direction == CLOCKWISE) {
+    Serial.println("Turned right!");
   }
 
-  delay(500);
 }
