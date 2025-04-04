@@ -44,26 +44,28 @@ void setup() {
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-  display.println(F("Hello World!"));
-  display.display();
 }
-
-int count = 0;
-
+bool ambientTemp = true;
 void loop() {
   encoder.loop();
 
   if (encoder.isPressed()) {
-    Serial.println("Button is pressed!");
-    Serial.println(count++);
-
+    ambientTemp = !ambientTemp;
   }
 
-  auto direction = encoder.getDirection();
-  if (direction == COUNTERCLOCKWISE) {
-    Serial.println("Turned left!");
-  } else if (direction == CLOCKWISE) {
-    Serial.println("Turned right!");
+  char buff[50];
+  if (ambientTemp) {
+    sprintf(buff, "otoczenia: %d C", static_cast<int>(mlx.readAmbientTempC()));
+  } else {
+    sprintf(buff, "obiektu: %d C", static_cast<int>(mlx.readObjectTempC()));
   }
+
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.print("Temperatura");
+  display.setCursor(0, 16);
+  display.print(buff);
+
+  display.display();
 
 }
