@@ -34,8 +34,12 @@ ezButton rightBtn(RIGHT_BUTTON_PIN, INPUT_PULLUP);
 bool thresholdMode = false; // = blinking mode
 bool buttonsPreviouslyPressed = false;
 unsigned long previousMillis = 0;  // Stores the last time the text was toggled
-const long blinkInterval = 500;
+constexpr unsigned long blinkInterval = 500;
 bool textVisible = true;
+
+unsigned long leftPressTime = 0;
+unsigned long rightPressTime = 0;
+constexpr unsigned long comboTimeout = 500;
 
 int temperatureThreshold = 40;
 
@@ -67,6 +71,7 @@ void setup() {
   Serial.println(F("Loaded temperatureThreshold from EEPROM!"));
   Serial.print(F("temperatureThreshold = "));
   Serial.println(temperatureThreshold);
+  Serial.println();
 #endif
 
   // Set pins: 16 for SDA and 17 for SCL
@@ -109,25 +114,44 @@ void loop() {
   leftBtn.loop();
   rightBtn.loop();
 
-  const bool bothPressed = leftBtn.isPressed() && rightBtn.isPressed();
-  if (bothPressed && !buttonsPreviouslyPressed) {
+  if (leftBtn.isPressed()) {
+    leftPressTime = millis();
+  }
+  if (rightBtn.isPressed()) {
+    rightPressTime = millis();
+  }
+
+  const bool comboDetected = abs((long)(leftPressTime - rightPressTime)) <= comboTimeout && leftPressTime != 0 && rightPressTime != 0;
+  if (comboDetected) {
     thresholdMode = !thresholdMode;
     textVisible = true;
     previousMillis = millis();
 
     if (!thresholdMode) {
-      EEPROM.put(EEPROM_ADDR, temperatureThreshold);
-      if (EEPROM.commit()) {
+      if (EEPROM.read(EEPROM_ADDR) != temperatureThreshold) {
+        EEPROM.put(EEPROM_ADDR, temperatureThreshold);
+        if (EEPROM.commit()) {
+          #ifdef DEBUG
+          Serial.println(F("Saved temperatureThreshold to EEPROM!"));
+          Serial.print(F("temperatureThreshold = "));
+          Serial.println(temperatureThreshold);
+          Serial.println();
+          #endif
+        }
+      } else {
         #ifdef DEBUG
-        Serial.println(F("Saved temperatureThreshold to EEPROM!"));
+        Serial.println(F("temperatureThreshold wasn't changed!"));
         Serial.print(F("temperatureThreshold = "));
         Serial.println(temperatureThreshold);
+        Serial.println();
         #endif
       }
 
     }
+
+    leftPressTime = 0;
+    rightPressTime = 0;
   }
-  buttonsPreviouslyPressed = bothPressed;
 
   if (thresholdMode) {
     unsigned long currentMillis = millis();
@@ -136,7 +160,7 @@ void loop() {
       textVisible = !textVisible;
     }
 
-    if (!bothPressed) {
+    if (!comboDetected) {
       if (leftBtn.isPressed()) {
         temperatureThreshold -= 5;
       }
