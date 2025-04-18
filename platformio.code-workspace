@@ -21,7 +21,9 @@
 			"algorithm": "cpp",
 			"*.x": "cpp",
 			"cmath": "cpp",
-			"limits": "cpp"
+			"limits": "cpp",
+			"bitset": "cpp",
+			"regex": "cpp"
 		}
 	}
 }
