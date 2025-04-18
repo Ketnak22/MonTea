@@ -174,7 +174,7 @@ void loop() {
 
   display.display();
 
-  if ((int)mlx.readObjectTempC() >= temperatureThreshold && !thresholdMode) {
+  if ((int)mlx.readObjectTempC() <= temperatureThreshold && !thresholdMode) {
     digitalWrite(ERROR_LED_PIN, HIGH);
   } else {
     digitalWrite(ERROR_LED_PIN, LOW);
