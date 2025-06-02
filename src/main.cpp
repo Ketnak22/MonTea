@@ -7,7 +7,7 @@
 #include <Adafruit_MLX90614.h>
 #include <Adafruit_SSD1306.h>
 
-#define DEBUG
+// #define DEBUG
 
 #define EEPROM_SIZE 4
 #define EEPROM_ADDR 0
@@ -44,11 +44,7 @@ constexpr unsigned long comboTimeout = 500;
 int temperatureThreshold = 40;
 
 const String formatTemperature(const int temperature) {
-  String text = "";
-  text += temperature;
-  text += (char)247;
-  text += "C";
-  return text;
+  return String(temperature) + (char)247 + 'C';
 }
 
 void drawArrows(const int y) {
@@ -154,7 +150,7 @@ void loop() {
   }
 
   if (thresholdMode) {
-    unsigned long currentMillis = millis();
+    const unsigned long currentMillis = millis();
     if (currentMillis - previousMillis >= blinkInterval) {
       previousMillis = currentMillis;
       textVisible = !textVisible;
@@ -177,10 +173,14 @@ void loop() {
 
   if (isnan(mlx.readAmbientTempC())) {
     digitalWrite(ERROR_LED_PIN, HIGH);
+    #ifdef DEBUG
+    Serial.println("Error reading from MLX sensor!");
+    #endif
     while(1);
   }
 
   constexpr int y = (32 / 2) - (16 / 2);
+
   drawArrows(y);
 
   String text = formatTemperature(static_cast<int>(mlx.readObjectTempC()));
@@ -197,8 +197,8 @@ void loop() {
   }
 
   display.display();
-
-  if ((int)mlx.readObjectTempC() <= temperatureThreshold && !thresholdMode) {
+  
+  if (static_cast<int>(mlx.readObjectTempC()) <= temperatureThreshold && !thresholdMode) {
     digitalWrite(ERROR_LED_PIN, HIGH);
   } else {
     digitalWrite(ERROR_LED_PIN, LOW);
