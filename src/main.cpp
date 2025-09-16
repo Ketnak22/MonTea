@@ -7,7 +7,7 @@
 #include <Adafruit_MLX90614.h>
 #include <Adafruit_SSD1306.h>
 
-#define DEBUG // Uncomment to enable debug output
+// #define DEBUG // Uncomment to enable debug output
 
 #define EEPROM_SIZE 4 // Size of needed EEPROM in bytes
 #define EEPROM_ADDR 0 // EEPROM address to store temperature threshold
@@ -19,6 +19,10 @@
 #define SCREEN_ADDRESS 0x3C // OLED display I2C address
 
 #define ERROR_LED_PIN 15
+
+#define BUZZER_PIN 0
+#define BEEP_INTERVAL 1000
+#define BEEP_TIME 1000
 
 #define SET_BUTTON_PIN 13
 
@@ -42,6 +46,8 @@ bool textVisible = true;
 
 unsigned long setPressTime = 0;
 unsigned long thresholdModeStartTime = 0; // Time when threshold mode was entered or last incremented
+
+unsigned long beepMillis = 0;
 
 int temperatureThreshold = 40;
 
@@ -85,6 +91,9 @@ void setup() {
   Wire.begin();
 
   pinMode(ERROR_LED_PIN, OUTPUT);
+
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, HIGH); // Disable buzzer
   
   setBtn.setDebounceTime(50);
   
@@ -199,9 +208,16 @@ void loop() {
 
   display.display();
   
+  // Beep repeatedly
+  beepMillis = millis();
   if (static_cast<int>(mlx.readObjectTempC()) <= temperatureThreshold && !thresholdMode) {
-    digitalWrite(ERROR_LED_PIN, HIGH);
+    unsigned long cycleTime = beepMillis % BEEP_INTERVAL;
+    if (cycleTime < 500) {
+      digitalWrite(BUZZER_PIN, LOW); // ON
+    } else {
+      digitalWrite(BUZZER_PIN, HIGH); // OFF
+    }
   } else {
-    digitalWrite(ERROR_LED_PIN, LOW);
+    digitalWrite(BUZZER_PIN, HIGH); // OFF when not above threshold
   }
 }
