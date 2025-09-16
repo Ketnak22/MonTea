@@ -7,7 +7,7 @@
 #include <Adafruit_MLX90614.h>
 #include <Adafruit_SSD1306.h>
 
-// #define DEBUG
+#define DEBUG
 
 #define EEPROM_SIZE 4
 #define EEPROM_ADDR 0
@@ -19,6 +19,11 @@
 #define SCREEN_ADDRESS 0x3C
 
 #define ERROR_LED_PIN 15
+
+#define BUZZER_PIN 0
+#define BEEP_INTERVAL 1000
+
+#define THRESHOLD_MODE_TIMEOUT 5000
 
 #define LEFT_BUTTON_PIN 13
 #define RIGHT_BUTTON_PIN 12
@@ -40,6 +45,10 @@ bool textVisible = true;
 unsigned long leftPressTime = 0;
 unsigned long rightPressTime = 0;
 constexpr unsigned long comboTimeout = 500;
+
+unsigned long beepMillis = 0;
+
+unsigned long thresholdModeStartMillis = 0;
 
 int temperatureThreshold = 40;
 
@@ -81,6 +90,8 @@ void setup() {
   Wire.begin();
 
   pinMode(ERROR_LED_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, HIGH);
   
   leftBtn.setDebounceTime(50);
   rightBtn.setDebounceTime(50);
@@ -106,25 +117,8 @@ void setup() {
   display.setTextColor(SSD1306_WHITE);
 }
 
-void loop() {
-  leftBtn.loop();
-  rightBtn.loop();
-
-  if (leftBtn.isPressed()) {
-    leftPressTime = millis();
-  }
-  if (rightBtn.isPressed()) {
-    rightPressTime = millis();
-  }
-
-  const bool comboDetected = abs((long)(leftPressTime - rightPressTime)) <= comboTimeout && leftPressTime != 0 && rightPressTime != 0;
-  if (comboDetected) {
-    thresholdMode = !thresholdMode;
-    textVisible = true;
-    previousMillis = millis();
-
-    if (!thresholdMode) {
-      if (EEPROM.read(EEPROM_ADDR) != temperatureThreshold) {
+void saveTemperaturetoEEPROM() {
+  if (EEPROM.read(EEPROM_ADDR) != temperatureThreshold) {
         EEPROM.put(EEPROM_ADDR, temperatureThreshold);
         if (EEPROM.commit()) {
           #ifdef DEBUG
@@ -142,11 +136,42 @@ void loop() {
         Serial.println();
         #endif
       }
+}
 
+void loop() {
+  leftBtn.loop();
+  rightBtn.loop();
+
+  if (leftBtn.isPressed()) {
+    leftPressTime = millis();
+  }
+  if (rightBtn.isPressed()) {
+    rightPressTime = millis();
+  }
+
+  const bool comboDetected = abs((long)(leftPressTime - rightPressTime)) <= comboTimeout && leftPressTime != 0 && rightPressTime != 0;
+  if (comboDetected) {
+    thresholdMode = !thresholdMode;
+    textVisible = true;
+    previousMillis = millis();
+
+    if (thresholdMode) {
+        thresholdModeStartMillis = millis(); // Start timer
+    } else {
+      saveTemperaturetoEEPROM();
     }
 
     leftPressTime = 0;
     rightPressTime = 0;
+  }
+
+  // Timeout if user does nothing for 5 seconds
+  if (thresholdMode) {
+    if (millis() - thresholdModeStartMillis >= THRESHOLD_MODE_TIMEOUT) {
+      thresholdMode = false;
+      textVisible = true;
+      saveTemperaturetoEEPROM();
+    }
   }
 
   if (thresholdMode) {
@@ -197,10 +222,16 @@ void loop() {
   }
 
   display.display();
-  
+
+  beepMillis = millis();
   if (static_cast<int>(mlx.readObjectTempC()) <= temperatureThreshold && !thresholdMode) {
-    digitalWrite(ERROR_LED_PIN, HIGH);
+    unsigned long cycleTime = beepMillis % BEEP_INTERVAL;
+    if (cycleTime < 500) {
+      digitalWrite(BUZZER_PIN, LOW); // ON
+    } else {
+      digitalWrite(BUZZER_PIN, HIGH); // OFF
+    }
   } else {
-    digitalWrite(ERROR_LED_PIN, LOW);
+    digitalWrite(BUZZER_PIN, HIGH); // OFF when not above threshold
   }
 }
