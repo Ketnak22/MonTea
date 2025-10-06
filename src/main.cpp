@@ -7,7 +7,7 @@
 #include <Adafruit_MLX90614.h>
 #include <Adafruit_SSD1306.h>
 
-#define DEBUG
+// #define DEBUG
 
 #define EEPROM_SIZE 4
 #define EEPROM_ADDR 0
@@ -18,15 +18,15 @@
 #define SCREEN_HEIGHT 32 // OLED display height, in pixels
 #define SCREEN_ADDRESS 0x3C
 
-#define ERROR_LED_PIN 15
+#define ERROR_LED_PIN 5
 
-#define BUZZER_PIN 0
+#define BUZZER_PIN 14
 #define BEEP_INTERVAL 1000
 
 #define THRESHOLD_MODE_TIMEOUT 5000
 
-#define LEFT_BUTTON_PIN 13
-#define RIGHT_BUTTON_PIN 12
+#define LEFT_BUTTON_PIN 27
+#define RIGHT_BUTTON_PIN 26
 
 // Initialize MLX90614 sensor and OLED display
 Adafruit_MLX90614 mlx;
@@ -80,8 +80,8 @@ void setup() {
 #endif
 
   // Set pins: 16 for SDA and 17 for SCL
-  Wire.setSDA(16);
-  Wire.setSCL(17);
+  Wire.setSDA(0);
+  Wire.setSCL(1);
 
   // Set frequency to 50KHz (MLX90164 works only in 10-100KHz range)
   Wire.setClock(50000);
@@ -90,6 +90,11 @@ void setup() {
   Wire.begin();
 
   pinMode(ERROR_LED_PIN, OUTPUT);
+
+  digitalWrite(ERROR_LED_PIN, HIGH);
+  delay(500);
+  digitalWrite(ERROR_LED_PIN, LOW);
+
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, HIGH);
   
@@ -137,7 +142,7 @@ void saveTemperaturetoEEPROM() {
         #endif
       }
 }
-
+// TODO Dodać możliwość startu trybu czuwania
 void loop() {
   leftBtn.loop();
   rightBtn.loop();
