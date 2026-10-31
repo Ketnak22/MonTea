@@ -10,7 +10,7 @@ class SettingsEditor {
 public:
   static constexpr int kTargetMin = 20;
   static constexpr int kTargetMax = 90;
-  static constexpr int kDefaultTarget = 55;
+  static constexpr int kDefaultTarget = 35;
   static constexpr int kOffsetMin = -20;
   static constexpr int kOffsetMax = 20;
   static constexpr uint32_t kTimeoutMs = 5000;

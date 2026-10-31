@@ -33,11 +33,13 @@ Put a hot cup under the sensor and walk away. There is nothing to press.
 
 The RGB LED is the one already on the board (GP16).
 
-### Better: give the sensor its own bus
+### Optional: give the sensor its own bus
+
+This isn't required, the device works just fine with the wiring above.
 
 The MLX90614 is limited to 100 kHz, so on a shared bus the display has to slow
-down too, and the sensor still sees every frame. If you get sensor errors or
-odd readings, move the sensor to its own bus:
+down too, and the sensor still sees every frame. If you ever get sensor errors
+or odd readings, move the sensor to its own bus:
 
 1. Connect MLX90614 SDA to GP2 and SCL to GP3.
 2. Set `MLX_ON_OWN_BUS` to `1` at the top of `src/main.cpp`.
@@ -47,7 +49,7 @@ odd readings, move the sensor to its own bus:
 | Screen            | RGB LED | What is happening                                 |
 | ----------------- | ------- | ------------------------------------------------- |
 | `Waiting for tea` | off     | Idle, stays quiet at any temperature              |
-| `Watching 55`     | amber   | Hot cup found, 55 is the target                   |
+| `Watching 35`     | amber   | Hot cup found, 35 is the target                   |
 | `Cup lifted`      | amber   | You took the cup, watching continues when it's back |
 | `Tea is ready!`   | green   | At the target, beeping                            |
 | `Sensor error`    | red     | No good reading for 2 seconds, keeps retrying     |
@@ -72,17 +74,18 @@ Settings close and save by themselves 5 seconds after the last press.
 
 ## Calibration
 
-The sensor only sees the surface of the tea, which is cooler than the drink, so
-the reading will probably be a bit low. To correct it once:
+Most people can skip this and leave the offset at 0.
 
-1. Pour a hot cup and stir it.
-2. Measure the tea with a kitchen thermometer.
-3. Hold both buttons for a second. The top line shows `now` and the live
-   reading.
-4. Adjust the offset until the reading matches the thermometer.
+> **The offset corrects the sensor, not the tea.** The device measures the cup,
+> and a cup cools differently from the liquid in it, so don't match the reading
+> to a thermometer in the tea.
 
-Then taste a few cups and set the target to what you like. The default of 55 is
-only a starting point.
+If the sensor itself reads wrong, hold both buttons for a second and adjust the
+offset until the reading matches a room thermometer, with an empty cup that has
+been sitting at room temperature.
+
+For the cup, change the target instead. The default of 35 suits a glass cup, so
+taste a few cups in anything else and set what you like.
 
 ## Placement
 
