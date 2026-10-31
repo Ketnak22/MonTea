@@ -47,8 +47,9 @@ struct StoredSettings {
 
 #define BLINK_PERIOD 1000
 
-#define LEFT_BUTTON_PIN 27
-#define RIGHT_BUTTON_PIN 26
+#define LEFT_BUTTON_PIN 26
+#define RIGHT_BUTTON_PIN 27
+#define BUTTON_PRESSED_LEVEL HIGH // the pins sit LOW at rest, even with the pull-up on
 
 // Set to 1 after moving the MLX90614 to GP2 (SDA) and GP3 (SCL). The display
 // then stays alone on GP0/GP1 and can use its full 400 kHz.
@@ -290,8 +291,8 @@ void handleButtons(const unsigned long now) {
   leftBtn.loop();
   rightBtn.loop();
 
-  const bool leftDown = leftBtn.getState() == LOW;
-  const bool rightDown = rightBtn.getState() == LOW;
+  const bool leftDown = leftBtn.getState() == BUTTON_PRESSED_LEVEL;
+  const bool rightDown = rightBtn.getState() == BUTTON_PRESSED_LEVEL;
 
   switch (gestures.update(now, leftDown, rightDown)) {
   case ButtonEvent::Down:

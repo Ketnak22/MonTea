@@ -12,7 +12,9 @@ Put a hot cup under the sensor and walk away. There is nothing to press.
 - MLX90614 IR temperature sensor
 - SSD1306 OLED, 128x32, I2C
 - Active-low buzzer (pin low = sound)
-- 2 push buttons, each between its pin and GND
+- 2 buttons that read LOW at rest and HIGH when pressed. For buttons wired
+  from the pin to GND instead, set `BUTTON_PRESSED_LEVEL` in `src/main.cpp` to
+  `LOW`
 - LED with a resistor for the error signal (optional, the screen and the RGB
   LED show faults too)
 
@@ -26,8 +28,8 @@ Put a hot cup under the sensor and walk away. There is nothing to press.
 | MLX90614 SCL    | GP1             |
 | Buzzer          | GP14            |
 | Error LED       | GP5             |
-| Left button     | GP27            |
-| Right button    | GP26            |
+| Left button     | GP26            |
+| Right button    | GP27            |
 
 The RGB LED is the one already on the board (GP16).
 
