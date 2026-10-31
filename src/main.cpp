@@ -77,7 +77,20 @@ void drawArrows(const int y) {
   display.drawChar(128 - 10 - 12, y, '>', WHITE, WHITE, 2);
 }
 
+void showSensorError() {
+  display.clearDisplay();
+  display.setCursor(0, 4);
+  display.setTextSize(1);
+  display.println(F("Sensor error"));
+  display.print(F("Check wiring"));
+  display.display();
+}
+
 void setup() {
+  // First thing, the buzzer is active low and the pin floats until now
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, HIGH);
+
 #ifdef DEBUG
   Serial.begin(9600);
   while (!Serial);
@@ -119,20 +132,10 @@ void setup() {
   delay(500);
   digitalWrite(ERROR_LED_PIN, LOW);
 
-  pinMode(BUZZER_PIN, OUTPUT);
-  digitalWrite(BUZZER_PIN, HIGH);
-  
   leftBtn.setDebounceTime(50);
   rightBtn.setDebounceTime(50);
 
-  if (!mlx.begin(MLX_ADDRESS, &MLX_BUS)) {
-    #ifdef DEBUG
-      Serial.println(F("Error connecting to MLX sensor. Check wiring."));
-    #endif
-    digitalWrite(ERROR_LED_PIN, HIGH);
-    while (1);
-  }
-
+  // Display goes first, so a missing sensor can be reported on it
   if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
     #ifdef DEBUG
       Serial.println(F("SSD1306 allocation failed"));
@@ -144,6 +147,15 @@ void setup() {
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
+
+  if (!mlx.begin(MLX_ADDRESS, &MLX_BUS)) {
+    #ifdef DEBUG
+      Serial.println(F("Error connecting to MLX sensor. Check wiring."));
+    #endif
+    digitalWrite(ERROR_LED_PIN, HIGH);
+    showSensorError();
+    while (1);
+  }
 }
 
 void saveTemperaturetoEEPROM() {
