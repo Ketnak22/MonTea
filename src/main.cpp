@@ -24,7 +24,10 @@
 #define BUZZER_PIN 14
 #define BEEP_INTERVAL 1000
 
+#define WATCHDOG_TIMEOUT 3000 // well above a worst case pass full of I2C timeouts
+
 #define SENSOR_READ_INTERVAL 250 // the MLX only refreshes a few times per second
+#define SENSOR_MAX_FAILURES 8 // failed reads in a row before showing a fault
 
 #define THRESHOLD_MODE_TIMEOUT 5000
 #define THRESHOLD_MIN 0
@@ -76,11 +79,13 @@ int temperatureThreshold = 40;
 float objectC = 0;
 float ambientC = 0;
 unsigned long lastSensorReadMillis = 0;
+int sensorFailures = 0;
 
 // What is on the screen right now
 String drawnText;
 bool drawnTextVisible = false;
 bool drawnThresholdMode = false;
+bool drawnSensorFault = false;
 
 const String formatTemperature(const int temperature) {
   return String(temperature) + (char)247 + 'C';
@@ -166,10 +171,11 @@ void setup() {
     #ifdef DEBUG
       Serial.println(F("Error connecting to MLX sensor. Check wiring."));
     #endif
-    digitalWrite(ERROR_LED_PIN, HIGH);
-    showSensorError();
-    while (1);
+    // loop() shows the fault and keeps retrying, a wire can be reseated live
+    sensorFailures = SENSOR_MAX_FAILURES;
   }
+
+  rp2040.wdt_begin(WATCHDOG_TIMEOUT);
 }
 
 void saveTemperaturetoEEPROM() {
@@ -186,6 +192,8 @@ void saveTemperaturetoEEPROM() {
 }
 // TODO Dodać możliwość startu trybu czuwania
 void loop() {
+  rp2040.wdt_reset();
+
   leftBtn.loop();
   rightBtn.loop();
 
@@ -245,13 +253,26 @@ void loop() {
 
   if (millis() - lastSensorReadMillis >= SENSOR_READ_INTERVAL) {
     lastSensorReadMillis = millis();
-    if (!mlx.read(objectC, ambientC)) {
-      digitalWrite(ERROR_LED_PIN, HIGH);
+    if (mlx.read(objectC, ambientC)) {
+      sensorFailures = 0;
+    } else if (sensorFailures < SENSOR_MAX_FAILURES) {
+      sensorFailures++;
       #ifdef DEBUG
       Serial.println("Error reading from MLX sensor!");
       #endif
-      while(1);
     }
+  }
+
+  // Short dropouts just keep the last good value, only a long one is a fault
+  const bool sensorFault = sensorFailures >= SENSOR_MAX_FAILURES;
+  digitalWrite(ERROR_LED_PIN, sensorFault ? HIGH : LOW);
+  if (sensorFault) {
+    if (!drawnSensorFault) {
+      drawnSensorFault = true;
+      showSensorError();
+    }
+    digitalWrite(BUZZER_PIN, HIGH); // OFF
+    return;
   }
 
   // Screen and alarm work from the same value
@@ -262,7 +283,8 @@ void loop() {
     text = formatTemperature(temperatureThreshold);
   }
 
-  if (text != drawnText || textVisible != drawnTextVisible || thresholdMode != drawnThresholdMode) {
+  if (drawnSensorFault || text != drawnText || textVisible != drawnTextVisible || thresholdMode != drawnThresholdMode) {
+    drawnSensorFault = false;
     drawnText = text;
     drawnTextVisible = textVisible;
     drawnThresholdMode = thresholdMode;
