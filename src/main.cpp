@@ -6,6 +6,8 @@
 
 #include <Adafruit_SSD1306.h>
 
+#include <ButtonGestures.h>
+#include <SettingsEditor.h>
 #include <TeaMonitor.h>
 
 #include "Mlx90614.h"
@@ -29,9 +31,7 @@
 
 #define SENSOR_READ_INTERVAL 250 // the MLX only refreshes a few times per second
 
-#define THRESHOLD_MODE_TIMEOUT 5000
-#define THRESHOLD_MIN 0
-#define THRESHOLD_MAX 95
+#define BLINK_PERIOD 1000
 
 #define LEFT_BUTTON_PIN 27
 #define RIGHT_BUTTON_PIN 26
@@ -59,21 +59,8 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1, OLED_I2C_CLOCK_
 ezButton leftBtn(LEFT_BUTTON_PIN, INPUT_PULLUP);
 ezButton rightBtn(RIGHT_BUTTON_PIN, INPUT_PULLUP);
 
-// Variables for blinking text
-bool thresholdMode = false; // = blinking mode
-bool buttonsPreviouslyPressed = false;
-unsigned long previousMillis = 0;  // Stores the last time the text was toggled
-constexpr unsigned long blinkInterval = 500;
-bool textVisible = true;
-
-unsigned long leftPressTime = 0;
-unsigned long rightPressTime = 0;
-constexpr unsigned long comboTimeout = 500;
-
-unsigned long thresholdModeLastPressMillis = 0;
-
-int temperatureThreshold = 40;
-
+ButtonGestures gestures;
+SettingsEditor editor;
 TeaMonitor monitor;
 
 float objectC = 0;
@@ -84,7 +71,7 @@ unsigned long lastSensorReadMillis = 0;
 String drawnStatus;
 String drawnText;
 bool drawnTextVisible = false;
-bool drawnThresholdMode = false;
+bool drawnEditing = false;
 bool drawnSensorFault = false;
 
 const String formatTemperature(const int temperature) {
@@ -99,7 +86,7 @@ void drawArrows(const int y) {
 const String statusLine() {
   switch (monitor.state()) {
   case TeaState::Watching:
-    return String(F("Watching, target ")) + temperatureThreshold;
+    return String(F("Watching, target ")) + editor.target();
   case TeaState::CupAway:
     return F("Cup lifted");
   case TeaState::Alarm:
@@ -130,14 +117,13 @@ void setup() {
 #endif
 
   EEPROM.begin(EEPROM_SIZE);
-  EEPROM.get(EEPROM_ADDR, temperatureThreshold);
-  if (temperatureThreshold < THRESHOLD_MIN || temperatureThreshold > THRESHOLD_MAX) {
-    temperatureThreshold = 40;
-  }
+  int storedTarget;
+  EEPROM.get(EEPROM_ADDR, storedTarget);
+  editor.load(storedTarget);
 #ifdef DEBUG
-  Serial.println(F("Loaded temperatureThreshold from EEPROM!"));
-  Serial.print(F("temperatureThreshold = "));
-  Serial.println(temperatureThreshold);
+  Serial.println(F("Loaded target from EEPROM!"));
+  Serial.print(F("target = "));
+  Serial.println(editor.target());
   Serial.println();
 #endif
 
@@ -181,7 +167,7 @@ void setup() {
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
-  monitor.setTarget(temperatureThreshold);
+  monitor.setTarget(editor.target());
 
   if (mlx.read(objectC, ambientC)) {
     monitor.onReading(millis(), objectC);
@@ -198,86 +184,69 @@ void setup() {
   rp2040.wdt_begin(WATCHDOG_TIMEOUT);
 }
 
-void saveTemperaturetoEEPROM() {
+void saveSettings() {
+  const int target = editor.target();
+
   // Only touches the flash if a byte actually changed
-  EEPROM.put(EEPROM_ADDR, temperatureThreshold);
+  EEPROM.put(EEPROM_ADDR, target);
   if (EEPROM.commit()) {
     #ifdef DEBUG
-    Serial.println(F("Saved temperatureThreshold to EEPROM!"));
-    Serial.print(F("temperatureThreshold = "));
-    Serial.println(temperatureThreshold);
+    Serial.println(F("Saved target to EEPROM!"));
+    Serial.print(F("target = "));
+    Serial.println(target);
     Serial.println();
     #endif
+  }
+}
+
+void applyStep(const int delta, const unsigned long now) {
+  if (editor.isOpen()) {
+    editor.step(delta);
+  } else {
+    // The first press only opens the editor, you want to see the value first
+    editor.open(now);
+    gestures.consume();
+  }
+}
+
+void handleButtons(const unsigned long now) {
+  leftBtn.loop();
+  rightBtn.loop();
+
+  const bool leftDown = leftBtn.getState() == LOW;
+  const bool rightDown = rightBtn.getState() == LOW;
+
+  switch (gestures.update(now, leftDown, rightDown)) {
+  case ButtonEvent::Down:
+    // A press during the alarm only stops the alarm
+    if (!editor.isOpen() && monitor.silence()) {
+      gestures.consume();
+    }
+    break;
+  case ButtonEvent::StepLeft:
+    applyStep(-1, now);
+    break;
+  case ButtonEvent::StepRight:
+    applyStep(1, now);
+    break;
+  case ButtonEvent::None:
+    break;
+  }
+
+  if (gestures.active()) {
+    editor.touch(now);
   }
 }
 
 void loop() {
   rp2040.wdt_reset();
 
-  leftBtn.loop();
-  rightBtn.loop();
+  handleButtons(millis());
 
-  if (leftBtn.isPressed()) {
-    leftPressTime = millis();
+  if (editor.update(millis())) {
+    saveSettings();
   }
-  if (rightBtn.isPressed()) {
-    rightPressTime = millis();
-  }
-
-  // A press during the alarm only stops the alarm
-  if ((leftBtn.isPressed() || rightBtn.isPressed()) && monitor.silence()) {
-    leftPressTime = 0;
-    rightPressTime = 0;
-  }
-
-  const bool comboDetected = abs((long)(leftPressTime - rightPressTime)) <= comboTimeout && leftPressTime != 0 && rightPressTime != 0;
-  if (comboDetected) {
-    thresholdMode = !thresholdMode;
-    textVisible = true;
-    previousMillis = millis();
-
-    if (thresholdMode) {
-        thresholdModeLastPressMillis = millis(); // Start timer
-    } else {
-      saveTemperaturetoEEPROM();
-    }
-
-    leftPressTime = 0;
-    rightPressTime = 0;
-  }
-
-  // Timeout if user does nothing for 5 seconds
-  if (thresholdMode) {
-    if (millis() - thresholdModeLastPressMillis >= THRESHOLD_MODE_TIMEOUT) {
-      thresholdMode = false;
-      textVisible = true;
-      saveTemperaturetoEEPROM();
-    }
-  }
-
-  if (thresholdMode) {
-    const unsigned long currentMillis = millis();
-    if (currentMillis - previousMillis >= blinkInterval) {
-      previousMillis = currentMillis;
-      textVisible = !textVisible;
-    }
-
-    if (!comboDetected) {
-      if (leftBtn.isPressed()) {
-        temperatureThreshold = constrain(temperatureThreshold - 5, THRESHOLD_MIN, THRESHOLD_MAX);
-        thresholdModeLastPressMillis = millis();
-      }
-      if (rightBtn.isPressed()) {
-        temperatureThreshold = constrain(temperatureThreshold + 5, THRESHOLD_MIN, THRESHOLD_MAX);
-        thresholdModeLastPressMillis = millis();
-      }
-    }
-
-  } else {
-    textVisible = true;
-  }
-
-  monitor.setTarget(temperatureThreshold);
+  monitor.setTarget(editor.target());
 
   if (millis() - lastSensorReadMillis >= SENSOR_READ_INTERVAL) {
     lastSensorReadMillis = millis();
@@ -304,19 +273,24 @@ void loop() {
     return;
   }
 
+  const bool editing = editor.isOpen();
+
   String status = statusLine();
   String text = formatTemperature(static_cast<int>(monitor.temperature()));
-  if (thresholdMode) {
+  if (editing) {
     status = F("Set target");
-    text = formatTemperature(temperatureThreshold);
+    text = formatTemperature(editor.target());
   }
 
-  if (drawnSensorFault || status != drawnStatus || text != drawnText || textVisible != drawnTextVisible || thresholdMode != drawnThresholdMode) {
+  // Solid while the buttons are in use, blinking while the editor waits
+  const bool textVisible = !editing || editor.sinceTouch(millis()) % BLINK_PERIOD < BLINK_PERIOD / 2;
+
+  if (drawnSensorFault || status != drawnStatus || text != drawnText || textVisible != drawnTextVisible || editing != drawnEditing) {
     drawnSensorFault = false;
     drawnStatus = status;
     drawnText = text;
     drawnTextVisible = textVisible;
-    drawnThresholdMode = thresholdMode;
+    drawnEditing = editing;
 
     constexpr int y = SCREEN_HEIGHT - 16;
     const int x = (SCREEN_WIDTH / 2) - (text.length() * 12 / 2);
@@ -326,7 +300,7 @@ void loop() {
     display.setCursor(0, 0);
     display.print(status);
 
-    if (thresholdMode) {
+    if (editing) {
       drawArrows(y);
     }
 
@@ -341,6 +315,6 @@ void loop() {
   }
 
   // Quiet while editing, it would drown out the point of the screen
-  const bool buzzerOn = monitor.buzzerOn(millis()) && !thresholdMode;
+  const bool buzzerOn = monitor.buzzerOn(millis()) && !editing;
   digitalWrite(BUZZER_PIN, buzzerOn ? LOW : HIGH);
 }
