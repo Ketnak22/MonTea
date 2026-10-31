@@ -4,8 +4,9 @@
 
 #include <ezButton.h>
 
-#include <Adafruit_MLX90614.h>
 #include <Adafruit_SSD1306.h>
+
+#include "Mlx90614.h"
 
 // #define DEBUG
 
@@ -47,7 +48,7 @@
 #endif
 
 // Initialize MLX90614 sensor and OLED display
-Adafruit_MLX90614 mlx;
+Mlx90614 mlx(MLX_BUS, MLX_ADDRESS);
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1, OLED_I2C_CLOCK_HZ, OLED_I2C_CLOCK_HZ);
 
 ezButton leftBtn(LEFT_BUTTON_PIN, INPUT_PULLUP);
@@ -150,7 +151,8 @@ void setup() {
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
-  if (!mlx.begin(MLX_ADDRESS, &MLX_BUS)) {
+  float objectC, ambientC;
+  if (!mlx.read(objectC, ambientC)) {
     #ifdef DEBUG
       Serial.println(F("Error connecting to MLX sensor. Check wiring."));
     #endif
@@ -233,7 +235,8 @@ void loop() {
 
   display.clearDisplay();
 
-  if (isnan(mlx.readAmbientTempC())) {
+  float objectC, ambientC;
+  if (!mlx.read(objectC, ambientC)) {
     digitalWrite(ERROR_LED_PIN, HIGH);
     #ifdef DEBUG
     Serial.println("Error reading from MLX sensor!");
@@ -247,7 +250,10 @@ void loop() {
     drawArrows(y);
   }
 
-  String text = formatTemperature(static_cast<int>(mlx.readObjectTempC()));
+  // Screen and alarm work from the same value
+  const int objectTemperature = static_cast<int>(objectC);
+
+  String text = formatTemperature(objectTemperature);
   if (thresholdMode) {
     text = formatTemperature(temperatureThreshold);
   }
@@ -263,7 +269,7 @@ void loop() {
   display.display();
 
   beepMillis = millis();
-  if (static_cast<int>(mlx.readObjectTempC()) <= temperatureThreshold && !thresholdMode) {
+  if (objectTemperature <= temperatureThreshold && !thresholdMode) {
     unsigned long cycleTime = beepMillis % BEEP_INTERVAL;
     if (cycleTime < 500) {
       digitalWrite(BUZZER_PIN, LOW); // ON
