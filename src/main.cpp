@@ -4,13 +4,16 @@
 
 #include <ezButton.h>
 
+#include <Adafruit_NeoPixel.h>
 #include <Adafruit_SSD1306.h>
 
 #include <ButtonGestures.h>
+#include <CoolingEstimator.h>
 #include <SettingsEditor.h>
 #include <TeaMonitor.h>
 
 #include "Mlx90614.h"
+#include "pixelart.h"
 
 // #define DEBUG
 
@@ -29,10 +32,14 @@ struct StoredSettings {
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 32 // OLED display height, in pixels
 #define SCREEN_ADDRESS 0x3C
+#define TEA_CUP_SIZE 16
+#define SCREEN_SLEEP_TIMEOUT 300000UL // 5 minutes of nothing happening
 
 #define ERROR_LED_PIN 5
 
 #define BUZZER_PIN 14
+
+#define STATUS_LED_LEVEL 24 // out of 255, full brightness is painful up close
 
 #define WATCHDOG_TIMEOUT 3000 // well above a worst case pass full of I2C timeouts
 
@@ -66,13 +73,22 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1, OLED_I2C_CLOCK_
 ezButton leftBtn(LEFT_BUTTON_PIN, INPUT_PULLUP);
 ezButton rightBtn(RIGHT_BUTTON_PIN, INPUT_PULLUP);
 
+// The LED on the Zero expects RGB instead of the usual GRB. If red and green
+// come out swapped on your board, change this to NEO_GRB.
+Adafruit_NeoPixel statusLed(1, PIN_NEOPIXEL, NEO_RGB + NEO_KHZ800);
+uint32_t shownLedColor = 0;
+
 ButtonGestures gestures;
 SettingsEditor editor;
 TeaMonitor monitor;
+CoolingEstimator cooling;
 
 float objectC = 0;
 float ambientC = 0;
 unsigned long lastSensorReadMillis = 0;
+
+unsigned long lastActivityMillis = 0;
+bool screenAsleep = false;
 
 // What is on the screen right now
 String drawnStatus;
@@ -92,8 +108,14 @@ void drawArrows(const int y) {
 
 const String statusLine() {
   switch (monitor.state()) {
-  case TeaState::Watching:
-    return String(F("Watching, target ")) + editor.target();
+  case TeaState::Watching: {
+    String line = String(F("Watching ")) + editor.target();
+    const int minutes = cooling.minutesUntil(editor.target(), ambientC);
+    if (minutes >= 0) {
+      line += String(F("  ~")) + minutes + F(" min");
+    }
+    return line;
+  }
   case TeaState::CupAway:
     return F("Cup lifted");
   case TeaState::Alarm:
@@ -102,6 +124,47 @@ const String statusLine() {
     break;
   }
   return F("Waiting for tea");
+}
+
+uint32_t statusLedColor() {
+  if (monitor.sensorFault()) {
+    return Adafruit_NeoPixel::Color(STATUS_LED_LEVEL, 0, 0); // red
+  }
+  if (editor.isOpen()) {
+    return Adafruit_NeoPixel::Color(0, 0, STATUS_LED_LEVEL); // blue
+  }
+  switch (monitor.state()) {
+  case TeaState::Watching:
+  case TeaState::CupAway:
+    return Adafruit_NeoPixel::Color(STATUS_LED_LEVEL, STATUS_LED_LEVEL / 2, 0); // amber
+  case TeaState::Alarm:
+    return Adafruit_NeoPixel::Color(0, STATUS_LED_LEVEL, 0); // green
+  case TeaState::Idle:
+    break;
+  }
+  return 0;
+}
+
+void updateStatusLed() {
+  const uint32_t color = statusLedColor();
+  if (color != shownLedColor) {
+    shownLedColor = color;
+    statusLed.setPixelColor(0, color);
+    statusLed.show();
+  }
+}
+
+void updateScreenPower(const unsigned long now) {
+  const bool idle = monitor.state() == TeaState::Idle && !editor.isOpen() && !monitor.sensorFault();
+  if (!idle || gestures.active()) {
+    lastActivityMillis = now;
+  }
+
+  const bool sleep = now - lastActivityMillis >= SCREEN_SLEEP_TIMEOUT;
+  if (sleep != screenAsleep) {
+    screenAsleep = sleep;
+    display.ssd1306_command(sleep ? SSD1306_DISPLAYOFF : SSD1306_DISPLAYON);
+  }
 }
 
 void showSensorError() {
@@ -159,6 +222,9 @@ void setup() {
   digitalWrite(ERROR_LED_PIN, HIGH);
   delay(500);
   digitalWrite(ERROR_LED_PIN, LOW);
+
+  statusLed.begin();
+  statusLed.show();
 
   leftBtn.setDebounceTime(50);
   rightBtn.setDebounceTime(50);
@@ -229,8 +295,9 @@ void handleButtons(const unsigned long now) {
 
   switch (gestures.update(now, leftDown, rightDown)) {
   case ButtonEvent::Down:
-    // A press during the alarm only stops the alarm
-    if (!editor.isOpen() && monitor.silence()) {
+    // A press during the alarm only stops the alarm, and one on a dark
+    // screen only wakes it up
+    if ((!editor.isOpen() && monitor.silence()) || screenAsleep) {
       gestures.consume();
     }
     break;
@@ -275,6 +342,16 @@ void loop() {
   }
   monitor.update(millis());
 
+  // Readings from before a lifted cup say nothing about where the tea is now
+  if (monitor.state() == TeaState::Watching) {
+    cooling.addReading(millis(), monitor.temperature());
+  } else {
+    cooling.reset();
+  }
+
+  updateStatusLed();
+  updateScreenPower(millis());
+
   // Short dropouts just keep the last good value, only a long one is a fault
   const bool sensorFault = monitor.sensorFault();
   digitalWrite(ERROR_LED_PIN, sensorFault ? HIGH : LOW);
@@ -303,7 +380,8 @@ void loop() {
   // Solid while the buttons are in use, blinking while the editor waits
   const bool textVisible = !editing || editor.sinceTouch(millis()) % BLINK_PERIOD < BLINK_PERIOD / 2;
 
-  if (drawnSensorFault || status != drawnStatus || text != drawnText || textVisible != drawnTextVisible || editing != drawnEditing) {
+  const bool screenChanged = drawnSensorFault || status != drawnStatus || text != drawnText || textVisible != drawnTextVisible || editing != drawnEditing;
+  if (screenChanged && !screenAsleep) {
     drawnSensorFault = false;
     drawnStatus = status;
     drawnText = text;
@@ -320,6 +398,8 @@ void loop() {
 
     if (editing) {
       drawArrows(y);
+    } else if (monitor.state() != TeaState::Idle) {
+      display.drawBitmap(0, SCREEN_HEIGHT - TEA_CUP_SIZE, PixelArt::teaCup, TEA_CUP_SIZE, TEA_CUP_SIZE, SSD1306_WHITE);
     }
 
     if (textVisible) {
