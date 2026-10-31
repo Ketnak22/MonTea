@@ -24,6 +24,8 @@
 #define BUZZER_PIN 14
 #define BEEP_INTERVAL 1000
 
+#define SENSOR_READ_INTERVAL 250 // the MLX only refreshes a few times per second
+
 #define THRESHOLD_MODE_TIMEOUT 5000
 #define THRESHOLD_MIN 0
 #define THRESHOLD_MAX 95
@@ -70,6 +72,15 @@ unsigned long beepMillis = 0;
 unsigned long thresholdModeLastPressMillis = 0;
 
 int temperatureThreshold = 40;
+
+float objectC = 0;
+float ambientC = 0;
+unsigned long lastSensorReadMillis = 0;
+
+// What is on the screen right now
+String drawnText;
+bool drawnTextVisible = false;
+bool drawnThresholdMode = false;
 
 const String formatTemperature(const int temperature) {
   return String(temperature) + (char)247 + 'C';
@@ -151,7 +162,6 @@ void setup() {
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
-  float objectC, ambientC;
   if (!mlx.read(objectC, ambientC)) {
     #ifdef DEBUG
       Serial.println(F("Error connecting to MLX sensor. Check wiring."));
@@ -233,21 +243,15 @@ void loop() {
     textVisible = true;
   }
 
-  display.clearDisplay();
-
-  float objectC, ambientC;
-  if (!mlx.read(objectC, ambientC)) {
-    digitalWrite(ERROR_LED_PIN, HIGH);
-    #ifdef DEBUG
-    Serial.println("Error reading from MLX sensor!");
-    #endif
-    while(1);
-  }
-
-  constexpr int y = (32 / 2) - (16 / 2);
-
-  if (thresholdMode) {
-    drawArrows(y);
+  if (millis() - lastSensorReadMillis >= SENSOR_READ_INTERVAL) {
+    lastSensorReadMillis = millis();
+    if (!mlx.read(objectC, ambientC)) {
+      digitalWrite(ERROR_LED_PIN, HIGH);
+      #ifdef DEBUG
+      Serial.println("Error reading from MLX sensor!");
+      #endif
+      while(1);
+    }
   }
 
   // Screen and alarm work from the same value
@@ -257,16 +261,30 @@ void loop() {
   if (thresholdMode) {
     text = formatTemperature(temperatureThreshold);
   }
-  const int x = (SCREEN_WIDTH / 2) - (text.length() * 12 / 2);
 
-  if (textVisible) {
-    display.setCursor(x, y);
-    display.setTextSize(2);
-    display.print(text);
-    display.setTextSize(1);
+  if (text != drawnText || textVisible != drawnTextVisible || thresholdMode != drawnThresholdMode) {
+    drawnText = text;
+    drawnTextVisible = textVisible;
+    drawnThresholdMode = thresholdMode;
+
+    constexpr int y = (32 / 2) - (16 / 2);
+    const int x = (SCREEN_WIDTH / 2) - (text.length() * 12 / 2);
+
+    display.clearDisplay();
+
+    if (thresholdMode) {
+      drawArrows(y);
+    }
+
+    if (textVisible) {
+      display.setCursor(x, y);
+      display.setTextSize(2);
+      display.print(text);
+      display.setTextSize(1);
+    }
+
+    display.display();
   }
-
-  display.display();
 
   beepMillis = millis();
   if (objectTemperature <= temperatureThreshold && !thresholdMode) {
