@@ -24,6 +24,8 @@
 #define BEEP_INTERVAL 1000
 
 #define THRESHOLD_MODE_TIMEOUT 5000
+#define THRESHOLD_MIN 0
+#define THRESHOLD_MAX 95
 
 #define LEFT_BUTTON_PIN 27
 #define RIGHT_BUTTON_PIN 26
@@ -64,7 +66,7 @@ constexpr unsigned long comboTimeout = 500;
 
 unsigned long beepMillis = 0;
 
-unsigned long thresholdModeStartMillis = 0;
+unsigned long thresholdModeLastPressMillis = 0;
 
 int temperatureThreshold = 40;
 
@@ -98,7 +100,7 @@ void setup() {
 
   EEPROM.begin(EEPROM_SIZE);
   EEPROM.get(EEPROM_ADDR, temperatureThreshold);
-  if (temperatureThreshold < 0 || temperatureThreshold >= 100) {
+  if (temperatureThreshold < THRESHOLD_MIN || temperatureThreshold > THRESHOLD_MAX) {
     temperatureThreshold = 40;
   }
 #ifdef DEBUG
@@ -159,24 +161,16 @@ void setup() {
 }
 
 void saveTemperaturetoEEPROM() {
-  if (EEPROM.read(EEPROM_ADDR) != temperatureThreshold) {
-        EEPROM.put(EEPROM_ADDR, temperatureThreshold);
-        if (EEPROM.commit()) {
-          #ifdef DEBUG
-          Serial.println(F("Saved temperatureThreshold to EEPROM!"));
-          Serial.print(F("temperatureThreshold = "));
-          Serial.println(temperatureThreshold);
-          Serial.println();
-          #endif
-        }
-      } else {
-        #ifdef DEBUG
-        Serial.println(F("temperatureThreshold wasn't changed!"));
-        Serial.print(F("temperatureThreshold = "));
-        Serial.println(temperatureThreshold);
-        Serial.println();
-        #endif
-      }
+  // Only touches the flash if a byte actually changed
+  EEPROM.put(EEPROM_ADDR, temperatureThreshold);
+  if (EEPROM.commit()) {
+    #ifdef DEBUG
+    Serial.println(F("Saved temperatureThreshold to EEPROM!"));
+    Serial.print(F("temperatureThreshold = "));
+    Serial.println(temperatureThreshold);
+    Serial.println();
+    #endif
+  }
 }
 // TODO Dodać możliwość startu trybu czuwania
 void loop() {
@@ -197,7 +191,7 @@ void loop() {
     previousMillis = millis();
 
     if (thresholdMode) {
-        thresholdModeStartMillis = millis(); // Start timer
+        thresholdModeLastPressMillis = millis(); // Start timer
     } else {
       saveTemperaturetoEEPROM();
     }
@@ -208,7 +202,7 @@ void loop() {
 
   // Timeout if user does nothing for 5 seconds
   if (thresholdMode) {
-    if (millis() - thresholdModeStartMillis >= THRESHOLD_MODE_TIMEOUT) {
+    if (millis() - thresholdModeLastPressMillis >= THRESHOLD_MODE_TIMEOUT) {
       thresholdMode = false;
       textVisible = true;
       saveTemperaturetoEEPROM();
@@ -224,10 +218,12 @@ void loop() {
 
     if (!comboDetected) {
       if (leftBtn.isPressed()) {
-        temperatureThreshold -= 5;
+        temperatureThreshold = constrain(temperatureThreshold - 5, THRESHOLD_MIN, THRESHOLD_MAX);
+        thresholdModeLastPressMillis = millis();
       }
       if (rightBtn.isPressed()) {
-        temperatureThreshold += 5;
+        temperatureThreshold = constrain(temperatureThreshold + 5, THRESHOLD_MIN, THRESHOLD_MAX);
+        thresholdModeLastPressMillis = millis();
       }
     }
 
@@ -247,7 +243,9 @@ void loop() {
 
   constexpr int y = (32 / 2) - (16 / 2);
 
-  drawArrows(y);
+  if (thresholdMode) {
+    drawArrows(y);
+  }
 
   String text = formatTemperature(static_cast<int>(mlx.readObjectTempC()));
   if (thresholdMode) {
