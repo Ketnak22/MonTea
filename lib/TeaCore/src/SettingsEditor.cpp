@@ -1,29 +1,36 @@
 #include "SettingsEditor.h"
 
-void SettingsEditor::load(int targetC) {
-  const bool valid = targetC >= kTargetMin && targetC <= kTargetMax;
-  _targetC = valid ? targetC : kDefaultTarget;
+static int limited(int value, int minimum, int maximum) {
+  if (value < minimum) {
+    return minimum;
+  }
+  return value > maximum ? maximum : value;
 }
 
-void SettingsEditor::open(uint32_t nowMs) {
-  _open = true;
+void SettingsEditor::load(int targetC, int offsetC) {
+  const bool validTarget = targetC >= kTargetMin && targetC <= kTargetMax;
+  const bool validOffset = offsetC >= kOffsetMin && offsetC <= kOffsetMax;
+  _targetC = validTarget ? targetC : kDefaultTarget;
+  _offsetC = validOffset ? offsetC : 0;
+}
+
+void SettingsEditor::open(SettingsPage page, uint32_t nowMs) {
+  _page = page;
   _lastTouchMs = nowMs;
 }
 
 void SettingsEditor::step(int delta) {
-  int value = _targetC + delta;
-  if (value < kTargetMin) {
-    value = kTargetMin;
-  } else if (value > kTargetMax) {
-    value = kTargetMax;
+  if (_page == SettingsPage::Target) {
+    _targetC = limited(_targetC + delta, kTargetMin, kTargetMax);
+  } else if (_page == SettingsPage::Offset) {
+    _offsetC = limited(_offsetC + delta, kOffsetMin, kOffsetMax);
   }
-  _targetC = value;
 }
 
 bool SettingsEditor::update(uint32_t nowMs) {
-  if (!_open || sinceTouch(nowMs) < kTimeoutMs) {
+  if (!isOpen() || sinceTouch(nowMs) < kTimeoutMs) {
     return false;
   }
-  _open = false;
+  _page = SettingsPage::Closed;
   return true;
 }

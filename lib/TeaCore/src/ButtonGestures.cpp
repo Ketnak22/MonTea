@@ -6,6 +6,7 @@ ButtonEvent ButtonGestures::stepEvent() const {
 
 ButtonEvent ButtonGestures::update(uint32_t nowMs, bool leftDown, bool rightDown) {
   const bool anyDown = leftDown || rightDown;
+  const bool bothDown = leftDown && rightDown;
 
   if (!_active) {
     if (!anyDown) {
@@ -14,9 +15,11 @@ ButtonEvent ButtonGestures::update(uint32_t nowMs, bool leftDown, bool rightDown
     _active = true;
     _consumed = false;
     _left = leftDown;
-    _both = leftDown && rightDown;
+    _both = bothDown;
+    _chordFired = false;
     _repeated = false;
     _startMs = nowMs;
+    _bothSinceMs = nowMs;
     _lastRepeatMs = nowMs;
     return ButtonEvent::Down;
   }
@@ -30,10 +33,20 @@ ButtonEvent ButtonGestures::update(uint32_t nowMs, bool leftDown, bool rightDown
     return ButtonEvent::None;
   }
 
-  if (leftDown && rightDown) {
+  if (bothDown && !_both) {
     _both = true;
+    _bothSinceMs = nowMs;
   }
-  if (_consumed || _both) {
+
+  if (_consumed) {
+    return ButtonEvent::None;
+  }
+
+  if (_both) {
+    if (bothDown && !_chordFired && nowMs - _bothSinceMs >= kChordMs) {
+      _chordFired = true;
+      return ButtonEvent::Chord;
+    }
     return ButtonEvent::None;
   }
 

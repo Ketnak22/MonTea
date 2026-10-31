@@ -14,8 +14,15 @@
 
 // #define DEBUG
 
-#define EEPROM_SIZE 4
 #define EEPROM_ADDR 0
+#define SETTINGS_MAGIC 0x4D544541
+
+// The target stays first, older firmware stored just that at this address
+struct StoredSettings {
+  int target;
+  int offset;
+  uint32_t magic;
+};
 
 #define MLX_ADDRESS 0x5A
 
@@ -116,14 +123,16 @@ void setup() {
   while (!Serial);
 #endif
 
-  EEPROM.begin(EEPROM_SIZE);
-  int storedTarget;
-  EEPROM.get(EEPROM_ADDR, storedTarget);
-  editor.load(storedTarget);
+  EEPROM.begin(sizeof(StoredSettings));
+  StoredSettings stored;
+  EEPROM.get(EEPROM_ADDR, stored);
+  editor.load(stored.target, stored.magic == SETTINGS_MAGIC ? stored.offset : 0);
 #ifdef DEBUG
-  Serial.println(F("Loaded target from EEPROM!"));
+  Serial.println(F("Loaded settings from EEPROM!"));
   Serial.print(F("target = "));
   Serial.println(editor.target());
+  Serial.print(F("offset = "));
+  Serial.println(editor.offset());
   Serial.println();
 #endif
 
@@ -170,7 +179,7 @@ void setup() {
   monitor.setTarget(editor.target());
 
   if (mlx.read(objectC, ambientC)) {
-    monitor.onReading(millis(), objectC);
+    monitor.onReading(millis(), objectC + editor.offset());
   } else {
     #ifdef DEBUG
       Serial.println(F("Error connecting to MLX sensor. Check wiring."));
@@ -185,15 +194,17 @@ void setup() {
 }
 
 void saveSettings() {
-  const int target = editor.target();
+  const StoredSettings stored = {editor.target(), editor.offset(), SETTINGS_MAGIC};
 
   // Only touches the flash if a byte actually changed
-  EEPROM.put(EEPROM_ADDR, target);
+  EEPROM.put(EEPROM_ADDR, stored);
   if (EEPROM.commit()) {
     #ifdef DEBUG
-    Serial.println(F("Saved target to EEPROM!"));
+    Serial.println(F("Saved settings to EEPROM!"));
     Serial.print(F("target = "));
-    Serial.println(target);
+    Serial.println(stored.target);
+    Serial.print(F("offset = "));
+    Serial.println(stored.offset);
     Serial.println();
     #endif
   }
@@ -204,7 +215,7 @@ void applyStep(const int delta, const unsigned long now) {
     editor.step(delta);
   } else {
     // The first press only opens the editor, you want to see the value first
-    editor.open(now);
+    editor.open(SettingsPage::Target, now);
     gestures.consume();
   }
 }
@@ -229,6 +240,9 @@ void handleButtons(const unsigned long now) {
   case ButtonEvent::StepRight:
     applyStep(1, now);
     break;
+  case ButtonEvent::Chord:
+    editor.open(editor.page() == SettingsPage::Offset ? SettingsPage::Target : SettingsPage::Offset, now);
+    break;
   case ButtonEvent::None:
     break;
   }
@@ -251,7 +265,7 @@ void loop() {
   if (millis() - lastSensorReadMillis >= SENSOR_READ_INTERVAL) {
     lastSensorReadMillis = millis();
     if (mlx.read(objectC, ambientC)) {
-      monitor.onReading(millis(), objectC);
+      monitor.onReading(millis(), objectC + editor.offset());
     } else {
       monitor.onReadFailed();
       #ifdef DEBUG
@@ -277,9 +291,13 @@ void loop() {
 
   String status = statusLine();
   String text = formatTemperature(static_cast<int>(monitor.temperature()));
-  if (editing) {
+  if (editor.page() == SettingsPage::Target) {
     status = F("Set target");
     text = formatTemperature(editor.target());
+  } else if (editor.page() == SettingsPage::Offset) {
+    // The live value is there to compare against a real thermometer
+    status = String(F("Set offset, now ")) + static_cast<int>(monitor.temperature());
+    text = (editor.offset() > 0 ? "+" : "") + formatTemperature(editor.offset());
   }
 
   // Solid while the buttons are in use, blinking while the editor waits
