@@ -79,11 +79,11 @@ void setup() {
   Serial.println();
 #endif
 
-  // Set pins: 16 for SDA and 17 for SCL
+  // Set pins: 0 for SDA and 1 for SCL
   Wire.setSDA(0);
   Wire.setSCL(1);
 
-  // Set frequency to 50KHz (MLX90164 works only in 10-100KHz range)
+  // Set frequency to 50KHz (MLX90614 works only in 10-100KHz range)
   Wire.setClock(50000);
 
   // Initialize I2C
@@ -237,6 +237,6 @@ void loop() {
       digitalWrite(BUZZER_PIN, HIGH); // OFF
     }
   } else {
-    digitalWrite(BUZZER_PIN, HIGH); // OFF when not above threshold
+    digitalWrite(BUZZER_PIN, HIGH); // OFF while the tea is above the threshold
   }
 }
