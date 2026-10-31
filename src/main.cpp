@@ -28,9 +28,25 @@
 #define LEFT_BUTTON_PIN 27
 #define RIGHT_BUTTON_PIN 26
 
+// Set to 1 after moving the MLX90614 to GP2 (SDA) and GP3 (SCL). The display
+// then stays alone on GP0/GP1 and can use its full 400 kHz.
+#define MLX_ON_OWN_BUS 0
+
+#define MLX_I2C_CLOCK_HZ 100000UL // MLX90614 works only in 10-100KHz range
+#define I2C_TIMEOUT_MS 25
+
+#if MLX_ON_OWN_BUS
+#define MLX_BUS Wire1
+#define OLED_I2C_CLOCK_HZ 400000UL
+#else
+// The MLX90614 sees all display traffic on a shared bus
+#define MLX_BUS Wire
+#define OLED_I2C_CLOCK_HZ MLX_I2C_CLOCK_HZ
+#endif
+
 // Initialize MLX90614 sensor and OLED display
 Adafruit_MLX90614 mlx;
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT);
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1, OLED_I2C_CLOCK_HZ, OLED_I2C_CLOCK_HZ);
 
 ezButton leftBtn(LEFT_BUTTON_PIN, INPUT_PULLUP);
 ezButton rightBtn(RIGHT_BUTTON_PIN, INPUT_PULLUP);
@@ -83,11 +99,19 @@ void setup() {
   Wire.setSDA(0);
   Wire.setSCL(1);
 
-  // Set frequency to 50KHz (MLX90614 works only in 10-100KHz range)
-  Wire.setClock(50000);
+  Wire.setClock(OLED_I2C_CLOCK_HZ);
 
   // Initialize I2C
   Wire.begin();
+  Wire.setTimeout(I2C_TIMEOUT_MS, true);
+
+#if MLX_ON_OWN_BUS
+  Wire1.setSDA(2);
+  Wire1.setSCL(3);
+  Wire1.setClock(MLX_I2C_CLOCK_HZ);
+  Wire1.begin();
+  Wire1.setTimeout(I2C_TIMEOUT_MS, true);
+#endif
 
   pinMode(ERROR_LED_PIN, OUTPUT);
 
@@ -101,7 +125,7 @@ void setup() {
   leftBtn.setDebounceTime(50);
   rightBtn.setDebounceTime(50);
 
-  if (!mlx.begin(MLX_ADDRESS, &Wire)) {
+  if (!mlx.begin(MLX_ADDRESS, &MLX_BUS)) {
     #ifdef DEBUG
       Serial.println(F("Error connecting to MLX sensor. Check wiring."));
     #endif
