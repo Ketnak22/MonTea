@@ -6,6 +6,8 @@
 
 #include <Adafruit_SSD1306.h>
 
+#include <TeaMonitor.h>
+
 #include "Mlx90614.h"
 
 // #define DEBUG
@@ -22,12 +24,10 @@
 #define ERROR_LED_PIN 5
 
 #define BUZZER_PIN 14
-#define BEEP_INTERVAL 1000
 
 #define WATCHDOG_TIMEOUT 3000 // well above a worst case pass full of I2C timeouts
 
 #define SENSOR_READ_INTERVAL 250 // the MLX only refreshes a few times per second
-#define SENSOR_MAX_FAILURES 8 // failed reads in a row before showing a fault
 
 #define THRESHOLD_MODE_TIMEOUT 5000
 #define THRESHOLD_MIN 0
@@ -70,18 +70,18 @@ unsigned long leftPressTime = 0;
 unsigned long rightPressTime = 0;
 constexpr unsigned long comboTimeout = 500;
 
-unsigned long beepMillis = 0;
-
 unsigned long thresholdModeLastPressMillis = 0;
 
 int temperatureThreshold = 40;
 
+TeaMonitor monitor;
+
 float objectC = 0;
 float ambientC = 0;
 unsigned long lastSensorReadMillis = 0;
-int sensorFailures = 0;
 
 // What is on the screen right now
+String drawnStatus;
 String drawnText;
 bool drawnTextVisible = false;
 bool drawnThresholdMode = false;
@@ -94,6 +94,20 @@ const String formatTemperature(const int temperature) {
 void drawArrows(const int y) {
   display.drawChar(10, y, '<', WHITE, WHITE, 2);
   display.drawChar(128 - 10 - 12, y, '>', WHITE, WHITE, 2);
+}
+
+const String statusLine() {
+  switch (monitor.state()) {
+  case TeaState::Watching:
+    return String(F("Watching, target ")) + temperatureThreshold;
+  case TeaState::CupAway:
+    return F("Cup lifted");
+  case TeaState::Alarm:
+    return F("Tea is ready!");
+  case TeaState::Idle:
+    break;
+  }
+  return F("Waiting for tea");
 }
 
 void showSensorError() {
@@ -167,12 +181,18 @@ void setup() {
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
-  if (!mlx.read(objectC, ambientC)) {
+  monitor.setTarget(temperatureThreshold);
+
+  if (mlx.read(objectC, ambientC)) {
+    monitor.onReading(millis(), objectC);
+  } else {
     #ifdef DEBUG
       Serial.println(F("Error connecting to MLX sensor. Check wiring."));
     #endif
     // loop() shows the fault and keeps retrying, a wire can be reseated live
-    sensorFailures = SENSOR_MAX_FAILURES;
+    for (uint8_t i = 0; i < TeaMonitor::kMaxFailures; i++) {
+      monitor.onReadFailed();
+    }
   }
 
   rp2040.wdt_begin(WATCHDOG_TIMEOUT);
@@ -190,7 +210,7 @@ void saveTemperaturetoEEPROM() {
     #endif
   }
 }
-// TODO Dodać możliwość startu trybu czuwania
+
 void loop() {
   rp2040.wdt_reset();
 
@@ -202,6 +222,12 @@ void loop() {
   }
   if (rightBtn.isPressed()) {
     rightPressTime = millis();
+  }
+
+  // A press during the alarm only stops the alarm
+  if ((leftBtn.isPressed() || rightBtn.isPressed()) && monitor.silence()) {
+    leftPressTime = 0;
+    rightPressTime = 0;
   }
 
   const bool comboDetected = abs((long)(leftPressTime - rightPressTime)) <= comboTimeout && leftPressTime != 0 && rightPressTime != 0;
@@ -251,20 +277,23 @@ void loop() {
     textVisible = true;
   }
 
+  monitor.setTarget(temperatureThreshold);
+
   if (millis() - lastSensorReadMillis >= SENSOR_READ_INTERVAL) {
     lastSensorReadMillis = millis();
     if (mlx.read(objectC, ambientC)) {
-      sensorFailures = 0;
-    } else if (sensorFailures < SENSOR_MAX_FAILURES) {
-      sensorFailures++;
+      monitor.onReading(millis(), objectC);
+    } else {
+      monitor.onReadFailed();
       #ifdef DEBUG
       Serial.println("Error reading from MLX sensor!");
       #endif
     }
   }
+  monitor.update(millis());
 
   // Short dropouts just keep the last good value, only a long one is a fault
-  const bool sensorFault = sensorFailures >= SENSOR_MAX_FAILURES;
+  const bool sensorFault = monitor.sensorFault();
   digitalWrite(ERROR_LED_PIN, sensorFault ? HIGH : LOW);
   if (sensorFault) {
     if (!drawnSensorFault) {
@@ -275,24 +304,27 @@ void loop() {
     return;
   }
 
-  // Screen and alarm work from the same value
-  const int objectTemperature = static_cast<int>(objectC);
-
-  String text = formatTemperature(objectTemperature);
+  String status = statusLine();
+  String text = formatTemperature(static_cast<int>(monitor.temperature()));
   if (thresholdMode) {
+    status = F("Set target");
     text = formatTemperature(temperatureThreshold);
   }
 
-  if (drawnSensorFault || text != drawnText || textVisible != drawnTextVisible || thresholdMode != drawnThresholdMode) {
+  if (drawnSensorFault || status != drawnStatus || text != drawnText || textVisible != drawnTextVisible || thresholdMode != drawnThresholdMode) {
     drawnSensorFault = false;
+    drawnStatus = status;
     drawnText = text;
     drawnTextVisible = textVisible;
     drawnThresholdMode = thresholdMode;
 
-    constexpr int y = (32 / 2) - (16 / 2);
+    constexpr int y = SCREEN_HEIGHT - 16;
     const int x = (SCREEN_WIDTH / 2) - (text.length() * 12 / 2);
 
     display.clearDisplay();
+
+    display.setCursor(0, 0);
+    display.print(status);
 
     if (thresholdMode) {
       drawArrows(y);
@@ -308,15 +340,7 @@ void loop() {
     display.display();
   }
 
-  beepMillis = millis();
-  if (objectTemperature <= temperatureThreshold && !thresholdMode) {
-    unsigned long cycleTime = beepMillis % BEEP_INTERVAL;
-    if (cycleTime < 500) {
-      digitalWrite(BUZZER_PIN, LOW); // ON
-    } else {
-      digitalWrite(BUZZER_PIN, HIGH); // OFF
-    }
-  } else {
-    digitalWrite(BUZZER_PIN, HIGH); // OFF while the tea is above the threshold
-  }
+  // Quiet while editing, it would drown out the point of the screen
+  const bool buzzerOn = monitor.buzzerOn(millis()) && !thresholdMode;
+  digitalWrite(BUZZER_PIN, buzzerOn ? LOW : HIGH);
 }
