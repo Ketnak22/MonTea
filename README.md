@@ -49,16 +49,22 @@ or odd readings, move the sensor to its own bus:
 | Screen            | RGB LED | What is happening                                 |
 | ----------------- | ------- | ------------------------------------------------- |
 | `Waiting for tea` | off     | Idle, stays quiet at any temperature              |
-| `Watching 35`     | amber   | Hot cup found, 35 is the target                   |
+| `Watching 35`     | amber   | Hot cup arrived, 35 is the target                 |
 | `Cup lifted`      | amber   | You took the cup, watching continues when it's back |
 | `Tea is ready!`   | green   | At the target, beeping                            |
 | `Sensor error`    | red     | No good reading for 2 seconds, keeps retrying     |
 | `Set target`      | blue    | Editing a setting                                 |
 
-- Watching starts by itself once the reading stays 5 degrees above the target
-  for 3 seconds.
+- Watching starts by itself when the reading shoots up by 3 degrees within a
+  few seconds and stays up for 3 seconds. That is what a cup arriving looks
+  like, so it works at any target. A cup that was already standing there, or
+  slow warming, is not picked up.
+- For 10 minutes after an alarm, only a cup above the target starts watching,
+  so putting your cup back after a sip doesn't set it off again.
 - After about a minute of watching, the top line adds an estimate like `~7 min`.
-- Tea at or below the target for 3 seconds sets off the alarm.
+- Tea at or below the target for 3 seconds sets off the alarm, once the reading
+  has dropped half a degree from its peak. A glass warms up slowly, so a cup
+  that arrives below the target only beeps when it starts cooling.
 - The alarm stops when you press any button, pick up the cup, or after a minute.
 - The screen turns off after 5 idle minutes. A button press or a hot cup wakes
   it up.

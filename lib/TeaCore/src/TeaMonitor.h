@@ -13,10 +13,12 @@ enum class TeaState : uint8_t {
 // on a PC. All times are in milliseconds, all temperatures in Celsius.
 class TeaMonitor {
 public:
-  static constexpr float kArmMarginC = 5.0f;        // above target to start watching
+  static constexpr float kRiseC = 3.0f;            // sudden rise, in a few seconds, that means a hot cup arrived
   static constexpr uint32_t kDwellMs = 3000;        // a condition must hold this long
   static constexpr float kCupDropC = 5.0f;          // drop that can't be normal cooling
+  static constexpr float kCoolingC = 0.5f;          // below the peak before it counts as cooling
   static constexpr uint32_t kCupAwayMaxMs = 600000; // give up on a lifted cup
+  static constexpr uint32_t kServedMs = 600000;     // after an alarm, a cool cup is the same cup
   static constexpr uint32_t kAlarmMaxMs = 60000;    // stop beeping by itself
   static constexpr uint32_t kBeepPeriodMs = 1000;
   static constexpr uint32_t kBeepOnMs = 500;
@@ -61,6 +63,14 @@ private:
   uint8_t _historyCount = 0;
   uint8_t _historyNext = 0;
   uint32_t _historyLastMs = 0;
+
+  float _peakC = 0;
+  bool _alarmed = false;
+  uint32_t _lastAlarmMs = 0;
+
+  float _windowLowC = 0;
+  float _riseBaseC = 0;
+  bool _riseSeen = false;
 
   float _lowestAwayC = 0;
 };

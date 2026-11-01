@@ -4,6 +4,13 @@ void TeaMonitor::enter(TeaState state, uint32_t nowMs) {
   _state = state;
   _stateSinceMs = nowMs;
   _conditionHeld = false;
+  _riseSeen = false;
+  if (state == TeaState::Watching) {
+    _peakC = _temperatureC;
+  } else if (state == TeaState::Alarm) {
+    _alarmed = true;
+    _lastAlarmMs = nowMs;
+  }
 }
 
 bool TeaMonitor::heldFor(bool condition, uint32_t nowMs) {
@@ -20,11 +27,16 @@ bool TeaMonitor::heldFor(bool condition, uint32_t nowMs) {
 
 bool TeaMonitor::rememberAndCheckDrop(uint32_t nowMs, float temperatureC) {
   float peakC = temperatureC;
+  float lowC = temperatureC;
   for (uint8_t i = 0; i < _historyCount; i++) {
     if (_history[i] > peakC) {
       peakC = _history[i];
     }
+    if (_history[i] < lowC) {
+      lowC = _history[i];
+    }
   }
+  _windowLowC = lowC;
 
   if (_historyCount == 0 || nowMs - _historyLastMs >= kHistoryStepMs) {
     _historyLastMs = nowMs;
@@ -44,18 +56,34 @@ void TeaMonitor::onReading(uint32_t nowMs, float temperatureC) {
   const bool dropped = rememberAndCheckDrop(nowMs, temperatureC);
 
   switch (_state) {
-  case TeaState::Idle:
-    if (heldFor(temperatureC >= _targetC + kArmMarginC, nowMs)) {
+  case TeaState::Idle: {
+    // A cup shows up as a sudden rise that then stays up. A sip right after
+    // the alarm looks the same, so a cool cup doesn't count for a while.
+    const bool justServed = _alarmed && nowMs - _lastAlarmMs < kServedMs;
+    if (!_riseSeen && temperatureC - _windowLowC >= kRiseC &&
+        (temperatureC > _targetC || !justServed)) {
+      _riseSeen = true;
+      _riseBaseC = _windowLowC;
+    }
+    if (_riseSeen && temperatureC < _riseBaseC + kRiseC) {
+      _riseSeen = false;
+    }
+    if (heldFor(_riseSeen, nowMs)) {
       enter(TeaState::Watching, nowMs);
     }
     break;
+  }
 
   case TeaState::Watching:
+    if (temperatureC > _peakC) {
+      _peakC = temperatureC;
+    }
     if (dropped) {
       // Tea loses a degree or two per minute, this was the cup leaving
       enter(TeaState::CupAway, nowMs);
       _lowestAwayC = temperatureC;
-    } else if (heldFor(temperatureC <= _targetC, nowMs)) {
+    } else if (heldFor(temperatureC <= _targetC && temperatureC <= _peakC - kCoolingC, nowMs)) {
+      // The glass warms up slowly, so wait for the reading to turn around
       enter(TeaState::Alarm, nowMs);
     }
     break;

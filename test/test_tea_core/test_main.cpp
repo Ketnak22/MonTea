@@ -32,8 +32,15 @@ static void hold(float temperatureC, uint32_t durationMs) {
   }
 }
 
+// A cup of tea arriving: the reading climbs a few degrees in a few seconds
+static void pour(float temperatureC) {
+  hold(22, 2000);
+  hold((22 + temperatureC) / 2, 1000);
+  hold(temperatureC, 4000);
+}
+
 static void startWatching() {
-  hold(kTarget + 6, 4000);
+  pour(kTarget + 6);
   TEST_ASSERT_TRUE(monitor.state() == TeaState::Watching);
 }
 
@@ -52,15 +59,65 @@ static void test_short_hot_spike_does_not_start_watching() {
   TEST_ASSERT_TRUE(monitor.state() == TeaState::Idle);
 }
 
-static void test_barely_warmer_than_target_does_not_start_watching() {
-  hold(kTarget + 4, 60000);
+static void test_still_hot_cup_without_a_rise_is_ignored() {
+  hold(70, 60000);
   TEST_ASSERT_TRUE(monitor.state() == TeaState::Idle);
 }
 
-static void test_stable_hot_reading_starts_watching() {
-  hold(70, 2500);
+static void test_slow_warming_does_not_start_watching() {
+  for (int i = 0; i < 40; i++) {
+    hold(40 + i * 0.5f, 3000); // 0.5 degrees per 3 seconds, crosses the target
+  }
   TEST_ASSERT_TRUE(monitor.state() == TeaState::Idle);
-  hold(70, 1000);
+}
+
+static void test_sudden_rise_starts_watching_even_just_above_target() {
+  pour(kTarget + 2);
+  TEST_ASSERT_TRUE(monitor.state() == TeaState::Watching);
+}
+
+static void test_cup_below_target_alarms_only_once_it_cools() {
+  pour(kTarget - 2);
+  TEST_ASSERT_TRUE(monitor.state() == TeaState::Watching);
+  hold(kTarget - 2, 10000);
+  TEST_ASSERT_TRUE(monitor.state() == TeaState::Watching); // still warming the glass
+  hold(kTarget - 3, 3500);
+  TEST_ASSERT_TRUE(monitor.state() == TeaState::Alarm);
+}
+
+static void test_cool_cup_put_back_after_the_alarm_stays_quiet() {
+  startWatching();
+  hold(kTarget + 3, 6000);
+  hold(kTarget, 3500);
+  TEST_ASSERT_TRUE(monitor.state() == TeaState::Alarm);
+  monitor.silence();
+  hold(22, 6000); // a sip
+  hold(kTarget - 1, 6000);
+  TEST_ASSERT_TRUE(monitor.state() == TeaState::Idle);
+}
+
+static void test_hot_cup_after_the_alarm_is_watched() {
+  startWatching();
+  hold(kTarget + 3, 6000);
+  hold(kTarget, 3500);
+  monitor.silence();
+  hold(22, 6000);
+  hold(kTarget + 6, 4000);
+  TEST_ASSERT_TRUE(monitor.state() == TeaState::Watching);
+}
+
+static void test_rise_must_last_a_few_seconds() {
+  hold(22, 2000);
+  hold(kTarget + 6, 2000);
+  hold(22, 5000);
+  TEST_ASSERT_TRUE(monitor.state() == TeaState::Idle);
+}
+
+static void test_rise_starts_watching_after_the_dwell() {
+  hold(22, 2000);
+  hold(kTarget + 6, 2500);
+  TEST_ASSERT_TRUE(monitor.state() == TeaState::Idle);
+  hold(kTarget + 6, 1000);
   TEST_ASSERT_TRUE(monitor.state() == TeaState::Watching);
 }
 
@@ -182,8 +239,7 @@ static void test_fault_mutes_the_alarm_and_clears_on_a_good_read() {
 
 static void test_clock_rollover_does_not_upset_the_timers() {
   nowMs = 0xFFFFF000UL;
-  hold(kTarget + 6, 4000);
-  TEST_ASSERT_TRUE(monitor.state() == TeaState::Watching);
+  startWatching();
   hold(kTarget + 3, 6000);
   hold(kTarget, 3500);
   TEST_ASSERT_TRUE(monitor.state() == TeaState::Alarm);
@@ -355,8 +411,14 @@ int main() {
 
   RUN_TEST(test_room_temperature_stays_quiet_from_power_on);
   RUN_TEST(test_short_hot_spike_does_not_start_watching);
-  RUN_TEST(test_barely_warmer_than_target_does_not_start_watching);
-  RUN_TEST(test_stable_hot_reading_starts_watching);
+  RUN_TEST(test_still_hot_cup_without_a_rise_is_ignored);
+  RUN_TEST(test_slow_warming_does_not_start_watching);
+  RUN_TEST(test_sudden_rise_starts_watching_even_just_above_target);
+  RUN_TEST(test_cup_below_target_alarms_only_once_it_cools);
+  RUN_TEST(test_cool_cup_put_back_after_the_alarm_stays_quiet);
+  RUN_TEST(test_hot_cup_after_the_alarm_is_watched);
+  RUN_TEST(test_rise_must_last_a_few_seconds);
+  RUN_TEST(test_rise_starts_watching_after_the_dwell);
   RUN_TEST(test_slow_cooling_ends_in_the_alarm_not_in_cup_away);
   RUN_TEST(test_noise_around_the_target_does_not_alarm);
   RUN_TEST(test_alarm_beeps_half_of_each_second);
