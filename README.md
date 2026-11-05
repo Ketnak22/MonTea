@@ -179,4 +179,4 @@ temperature is a matter of taste.
 
 ## License
 
-MIT. Add a `LICENSE` file with the MIT text before publishing.
+MIT, see [LICENSE](LICENSE).
