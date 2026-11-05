@@ -1,4 +1,6 @@
-# Mon Tea
+# MonTea
+
+Short for Monitor Tea.
 
 > PL: Małe urządzenie, które pilnuje herbaty i piszczy, gdy wystygnie do
 > wybranej temperatury. Czujnik podczerwieni mierzy dno kubka, więc nic nie
