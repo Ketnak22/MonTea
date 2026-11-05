@@ -53,17 +53,6 @@ the logic tests are in this repo. The enclosure files aren't (see
 | Left button     | GP26            |
 | Right button    | GP27            |
 
-### Optional: give the sensor its own bus
-
-You don't need this, the wiring above works fine.
-
-The MLX90614 is limited to 100 kHz, so on a shared bus the display has to slow
-down too, and the sensor still sees every frame. If you get sensor errors or
-odd readings, move the sensor to its own bus:
-
-1. Connect MLX90614 SDA to GP2 and SCL to GP3.
-2. Set `MLX_ON_OWN_BUS` to `1` at the top of `src/main.cpp`.
-
 ## Enclosure
 
 The case in the photos is 3D printed in PLA. I wouldn't do that again: the
@@ -142,8 +131,8 @@ for my glass cup. For anything else, taste a few cups and set what you like.
   glass, not the tea.
 - A cup with a thick or hollow base reads lower and reacts later than the tea
   inside. A flat, thin bottom works best.
-- Polished metal reflects IR instead of emitting it, so it reads much colder than it is.
-  Glass and ceramic are fine, the bottom of a steel mug isn't.
+- Polished metal reflects IR instead of emitting it, so it reads much colder
+  than it is. Glass and ceramic are fine, the bottom of a steel mug isn't.
 - Keep the sensor hole clean. A drop of tea on the sensor throws the reading
   off.
 
@@ -164,15 +153,22 @@ haven't tuned them against measurements yet.
 Uncomment `#define DEBUG` in `src/main.cpp` for serial output. The board then
 waits for a USB serial connection at boot.
 
-### RGB LED
+## Notes
+
+You don't need to change anything here for the wiring above to work.
+
+The MLX90614 is limited to 100 kHz, so on the shared bus the display runs at
+100 kHz too, and the sensor still sees every frame. If you get sensor errors
+or odd readings, connect the sensor to its own bus (SDA to GP2, SCL to GP3)
+and set `MLX_ON_OWN_BUS` to `1` at the top of `src/main.cpp`. The display then
+gets its full 400 kHz.
 
 The RGB LED on the board (GP16) shows the state too, but in my build it's
 hidden inside the case. If your board is visible, it works as is: amber while
 watching or with the cup lifted, green when the tea is ready, red on a sensor
-error, blue while editing a setting, and off while waiting.
-
-The LED colour order is `NEO_RGB`. If red and green look swapped on your board,
-change it to `NEO_GRB` in `src/main.cpp`.
+error, blue while editing a setting, and off while waiting. The colour order is
+`NEO_RGB`. If red and green look swapped on your board, change it to `NEO_GRB`
+in `src/main.cpp`.
 
 ## What I learned
 
