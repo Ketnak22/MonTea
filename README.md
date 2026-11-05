@@ -81,7 +81,7 @@ sit in the middle of where the cup stands.
 | ----------------- | --------------------------------------------------- |
 | `Waiting for tea` | Idle, stays quiet at any temperature                |
 | `Watching 50`     | Hot cup arrived, 50 is the target                   |
-| `Cup lifted`      | You took the cup, watching continues when it's back |
+| `Cup lifted`      | You took the cup. Back above the target, watching continues; back at or below it, the alarm goes off. After 10 minutes away it gives up |
 | `Tea is ready!`   | At the target, beeping                              |
 | `Sensor error`    | No good reading for 2 seconds, keeps retrying       |
 | `Set target`      | Editing a setting                                   |
@@ -108,7 +108,7 @@ sit in the middle of where the cup stands.
 
 - Any press opens the target setting. This first press changes nothing.
 - While editing, left lowers the target and right raises it, 1 degree at a
-  time. Hold to repeat.
+  time. Hold to repeat. The target can be set from 20 to 90 °C.
 - Holding both for a second switches to the calibration offset.
 - During the alarm, any press stops it.
 
