@@ -1,5 +1,7 @@
 # MonTea
 
+![CI](https://github.com/Ketnak22/MonTea/actions/workflows/ci.yml/badge.svg)
+
 Short for Monitor Tea.
 
 > PL: Małe urządzenie, które pilnuje herbaty i piszczy, gdy wystygnie do
